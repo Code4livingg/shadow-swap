@@ -1,0 +1,264 @@
+.app-shell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0 56px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+  padding: 24px;
+}
+
+.hero-panel {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  background:
+    linear-gradient(135deg, rgba(255, 209, 102, 0.12), transparent 38%),
+    linear-gradient(225deg, rgba(124, 227, 179, 0.14), transparent 42%),
+    var(--bg-elevated);
+}
+
+.section-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 0.82rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+h1,
+h2 {
+  margin: 0;
+  color: var(--text-strong);
+  line-height: 1;
+}
+
+h1 {
+  font-size: clamp(3rem, 8vw, 5rem);
+  letter-spacing: -0.06em;
+}
+
+h2 {
+  font-size: 1.45rem;
+  letter-spacing: -0.04em;
+}
+
+.lede,
+.muted-text,
+.status-message {
+  color: var(--text-muted);
+}
+
+.wallet-box,
+.wallet-meta,
+.action-stack,
+.order-form,
+.status-panel,
+.winner-card,
+.handle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wallet-box {
+  min-width: min(360px, 100%);
+  align-items: flex-start;
+}
+
+.wallet-meta {
+  color: var(--text-strong);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.badge.live {
+  border-color: rgba(124, 227, 179, 0.5);
+  color: var(--buy);
+}
+
+.primary-button,
+.secondary-button,
+.segmented-button {
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 14px 18px;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.primary-button {
+  color: #10202b;
+  background: linear-gradient(135deg, #ffd166, #f3a84f);
+}
+
+.secondary-button {
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border);
+}
+
+.segmented-button {
+  flex: 1;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--border);
+}
+
+.segmented-button.active {
+  color: var(--text-strong);
+  border-color: rgba(255, 209, 102, 0.6);
+  background: rgba(255, 209, 102, 0.12);
+}
+
+.primary-button:hover,
+.secondary-button:hover,
+.segmented-button:hover {
+  transform: translateY(-1px);
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.segmented-button:disabled {
+  cursor: not-allowed;
+  transform: none;
+  opacity: 0.55;
+}
+
+.order-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-strong);
+}
+
+.order-form input {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  color: var(--text-strong);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.toggle-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.action-panel {
+  justify-content: space-between;
+}
+
+.status-panel {
+  margin-top: 20px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.stat-card,
+.winner-card {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.stat-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  margin-bottom: 8px;
+}
+
+.stat-card strong {
+  color: var(--text-strong);
+  font-size: 1.2rem;
+}
+
+.handle-list {
+  margin-top: 18px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(151, 192, 214, 0.12);
+}
+
+.stat-row span {
+  color: var(--text-muted);
+}
+
+.stat-row code {
+  color: var(--text-strong);
+  text-align: right;
+  word-break: break-all;
+}
+
+.error-text {
+  color: var(--danger);
+}
+
+@media (max-width: 920px) {
+  .app-shell {
+    width: min(100%, calc(100% - 20px));
+    padding-top: 16px;
+  }
+
+  .hero-panel,
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .wallet-box {
+    min-width: 0;
+  }
+
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-row {
+    flex-direction: column;
+  }
+}

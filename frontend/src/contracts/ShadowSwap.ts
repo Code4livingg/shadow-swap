@@ -1,4 +1,4 @@
-import { BrowserProvider, Contract, JsonRpcProvider, isAddress } from 'ethers'
+import { BrowserProvider, Contract, Interface, JsonRpcProvider, isAddress } from 'ethers'
 
 export const ARBITRUM_SEPOLIA_RPC_URL =
   import.meta.env.VITE_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc'
@@ -37,9 +37,17 @@ export type SubmitEncryptedOrderParams = {
   isBuy: boolean
 }
 
+export type IntentMatch = {
+  id: string
+  intentA: string
+  intentB: string
+  timestamp: string
+}
+
 const SHADOW_SWAP_ABI = [
   'function submitOrder((uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) price,(uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) amount,bool isBuy)',
   'function submitIntent(bytes encryptedIntent)',
+  'function matches(uint256) view returns (uint256 intentA, uint256 intentB, uint256 timestamp)',
   'function matchOrders()',
   'function revealWinner()',
   'function getOrderCount() view returns (uint256)',
@@ -58,6 +66,7 @@ const SHADOW_SWAP_ABI = [
   'function revealedWinnerPrice() view returns (uint256)',
   'function revealedWinnerAmount() view returns (uint256)',
   'function revealedWinnerIsBuy() view returns (bool)',
+  'event IntentMatched(uint256 indexed intentA, uint256 indexed intentB)',
 ] as const
 
 const getConfiguredAddress = () => {
@@ -79,6 +88,8 @@ export const isDeploymentPending = () => false
 
 const getReadContract = () =>
   new Contract(getConfiguredAddress(), SHADOW_SWAP_ABI, new JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL))
+
+const getReadProvider = () => new JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL)
 
 const getWriteContract = async () => {
   if (!window.ethereum) {
@@ -218,4 +229,42 @@ export async function getOrders() {
   }
 
   return rows
+}
+
+export async function readMatches(): Promise<IntentMatch[]> {
+  const provider = getReadProvider()
+  const contract = getReadContract()
+  const contractAddress = getConfiguredAddress()
+  const contractInterface = new Interface(SHADOW_SWAP_ABI)
+  const eventFragment = contractInterface.getEvent('IntentMatched')
+
+  if (!eventFragment) {
+    throw new Error('IntentMatched event is not available in the current contract ABI.')
+  }
+
+  const topic = eventFragment.topicHash
+
+  const logs = await provider.getLogs({
+    address: contractAddress,
+    fromBlock: 0,
+    toBlock: 'latest',
+    topics: [topic],
+  })
+
+  const matchesCount = logs.length
+
+  const matches = await Promise.all(
+    Array.from({ length: matchesCount }, async (_, index) => {
+      const entry = await contract.matches(index)
+
+      return {
+        id: `${index}`,
+        intentA: entry.intentA.toString(),
+        intentB: entry.intentB.toString(),
+        timestamp: entry.timestamp.toString(),
+      }
+    }),
+  )
+
+  return matches.reverse()
 }

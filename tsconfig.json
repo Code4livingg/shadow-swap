@@ -13,8 +13,11 @@
   "include": [
     "./scripts",
     "./test",
-    "./tasks",
     "./typechain-types",
     "./hardhat.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "tasks"
   ]
 }

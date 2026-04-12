@@ -17,12 +17,24 @@ contract ShadowSwap {
         uint256 timestamp;
     }
 
+    struct Match {
+        uint256 intentA;
+        uint256 intentB;
+        uint256 timestamp;
+    }
+
     Order[] private orders;
     BlindIntent[] public intents;
+    Match[] public matches;
 
     event BlindIntentSubmitted(
         address indexed user,
         uint256 intentId
+    );
+
+    event IntentMatched(
+        uint256 indexed intentA,
+        uint256 indexed intentB
     );
 
     euint32 private ZERO;
@@ -94,6 +106,42 @@ contract ShadowSwap {
             msg.sender,
             intents.length - 1
         );
+    }
+
+    function matchIntents(
+        uint256 intentA,
+        uint256 intentB
+    ) external {
+        require(intentA < intents.length);
+        require(intentB < intents.length);
+
+        matches.push(
+            Match({
+                intentA: intentA,
+                intentB: intentB,
+                timestamp: block.timestamp
+            })
+        );
+
+        emit IntentMatched(intentA, intentB);
+    }
+
+    function autoMatch(
+        uint256 intentA,
+        uint256 intentB
+    ) external {
+        require(intentA < intents.length);
+        require(intentB < intents.length);
+
+        matches.push(
+            Match({
+                intentA: intentA,
+                intentB: intentB,
+                timestamp: block.timestamp
+            })
+        );
+
+        emit IntentMatched(intentA, intentB);
     }
 
     function matchOrders() external {

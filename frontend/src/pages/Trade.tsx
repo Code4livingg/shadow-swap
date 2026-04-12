@@ -1,4 +1,6 @@
+import { MatchPanel } from '../components/MatchPanel'
 import { OrderForm } from '../components/OrderForm'
+import { useMatches } from '../hooks/useMatches'
 
 type TradeProps = {
   blindSubmitting: boolean
@@ -28,6 +30,8 @@ export function Trade({
   onSubmit,
   submitting,
 }: TradeProps) {
+  const matches = useMatches()
+
   return (
     <section className="page-stack">
       <section className="split-grid">
@@ -53,6 +57,8 @@ export function Trade({
           submitting={submitting}
         />
       </section>
+
+      <MatchPanel error={matches.error} loading={matches.loading} matches={matches.matches} />
     </section>
   )
 }

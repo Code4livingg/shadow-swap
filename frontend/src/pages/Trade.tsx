@@ -1,8 +1,15 @@
 import { OrderForm } from '../components/OrderForm'
 
 type TradeProps = {
+  blindSubmitting: boolean
   deploymentPending: boolean
   disabled: boolean
+  onSubmitBlind: (values: {
+    amount: string
+    slippage: string
+    tokenA: string
+    tokenB: string
+  }) => Promise<string | void>
   onSubmit: (values: {
     amount: string
     isBuy: boolean
@@ -13,7 +20,14 @@ type TradeProps = {
   submitting: boolean
 }
 
-export function Trade({ deploymentPending, disabled, onSubmit, submitting }: TradeProps) {
+export function Trade({
+  blindSubmitting,
+  deploymentPending,
+  disabled,
+  onSubmitBlind,
+  onSubmit,
+  submitting,
+}: TradeProps) {
   return (
     <section className="page-stack">
       <section className="split-grid">
@@ -31,8 +45,10 @@ export function Trade({ deploymentPending, disabled, onSubmit, submitting }: Tra
         </article>
 
         <OrderForm
+          blindSubmitting={blindSubmitting}
           deploymentPending={deploymentPending}
           disabled={disabled}
+          onSubmitBlind={onSubmitBlind}
           onSubmit={onSubmit}
           submitting={submitting}
         />

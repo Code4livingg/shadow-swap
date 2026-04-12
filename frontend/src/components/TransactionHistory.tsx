@@ -25,7 +25,7 @@ export function TransactionHistory({
           <h2>Sealed transaction history</h2>
         </div>
         <span className={`badge ${deploymentPending ? 'badge-warning' : 'badge-success'}`}>
-          {deploymentPending ? 'Address placeholder' : 'Live contract'}
+          {deploymentPending ? 'Contract unavailable' : 'Live contract'}
         </span>
       </div>
 

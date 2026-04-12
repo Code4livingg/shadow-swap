@@ -197,6 +197,16 @@ export function useShadowSwap() {
     }
   }, [isConnected, refresh])
 
+  useEffect(() => {
+    if (!isConnected || !address) {
+      return
+    }
+
+    console.log('Connected wallet:', address)
+    console.log('Network:', chainId)
+    console.log('Contract address:', getShadowSwapAddress())
+  }, [address, chainId, isConnected])
+
   const networkMismatch = isConnected && chainId !== arbitrumSepolia.id
   const deploymentPendingState = isDeploymentPending()
 
@@ -210,12 +220,6 @@ export function useShadowSwap() {
   const fheOperationsToday = history.length + snapshot.orderCount + orderbook.length
 
   const recentEncryptedActivity = useMemo(() => {
-    const demoEntries = [
-      '0x7f3a...sealed an order · 2min ago · 🔐',
-      '0x2b1c...joined Club #3 · 5min ago · 🕶',
-      'Match executed · Winner revealed · 12min ago · ✓',
-    ]
-
     const historyEntries = history.slice(0, 3).map((entry) => {
       if (entry.action === 'submit') {
         return `${entry.hash.slice(0, 8)}...sealed an order · just now · 🔐`
@@ -228,7 +232,7 @@ export function useShadowSwap() {
       return `Threshold key decrypt advanced · just now · 🔐`
     })
 
-    return [...historyEntries, ...demoEntries].slice(0, 6)
+    return historyEntries
   }, [history])
 
   const submitOrder = useCallback(

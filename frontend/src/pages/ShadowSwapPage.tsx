@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Header } from '../components/Header'
 import { Sidebar, type AppPage } from '../components/Sidebar'
 import { ToastStack } from '../components/ToastStack'
+import { useBlindIntent } from '../hooks/useBlindIntent'
 import { useClubs } from '../hooks/useClubs'
 import { useShadowSwap } from '../hooks/useShadowSwap'
 import { useSignals } from '../hooks/useSignals'
@@ -14,6 +15,7 @@ import { Trade } from './Trade'
 
 export function ShadowSwapPage() {
   const shadowSwap = useShadowSwap()
+  const blindIntent = useBlindIntent()
   const clubs = useClubs()
   const signals = useSignals()
   const [activePage, setActivePage] = useState<AppPage>('lounge')
@@ -75,8 +77,18 @@ export function ShadowSwapPage() {
     ),
     trade: (
       <Trade
+        blindSubmitting={blindIntent.submittingBlindIntent}
         deploymentPending={shadowSwap.deploymentPending}
-        disabled={!shadowSwap.isConnected || shadowSwap.networkMismatch || working}
+        disabled={!shadowSwap.isConnected || shadowSwap.networkMismatch || working || blindIntent.submittingBlindIntent}
+        onSubmitBlind={async ({ amount, slippage, tokenA, tokenB }) =>
+          blindIntent.submitBlindIntent({
+            amount,
+            slippage: Number(slippage),
+            timestamp: Date.now(),
+            tokenIn: tokenA,
+            tokenOut: tokenB,
+          })
+        }
         onSubmit={shadowSwap.submitOrder}
         submitting={shadowSwap.submitting}
       />

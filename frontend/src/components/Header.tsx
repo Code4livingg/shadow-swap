@@ -21,11 +21,11 @@ export function Header({
 }: HeaderProps) {
   const { connectors, connect, isPending, error } = useConnect()
   const { disconnect } = useDisconnect()
-  const walletConnectConfigured = Boolean(import.meta.env.VITE_WALLETCONNECT_PROJECT_ID)
+  const metaMaskConnector =
+    connectors.find((connector) => connector.name === 'MetaMask') ??
+    connectors.find((connector) => connector.name === 'Injected')
 
-  const preferredConnectors = connectors
-    .filter((connector) => connector.name !== 'Injected')
-    .concat(connectors.filter((connector) => connector.name === 'Injected'))
+  const connectLabel = isPending ? 'Connecting MetaMask...' : 'Connect MetaMask'
 
   return (
     <header className="topbar glass-panel">
@@ -49,39 +49,23 @@ export function Header({
           </button>
         ) : (
           <div className="wallet-button-row">
-            {preferredConnectors.map((connector) => {
-              const isWalletConnect = connector.name === 'WalletConnect'
-              const disabled = isPending || (isWalletConnect && !walletConnectConfigured)
-              const label = isPending
-                ? `Connecting ${connector.name}...`
-                : connector.name === 'Injected'
-                  ? 'MetaMask'
-                  : isWalletConnect && !walletConnectConfigured
-                    ? 'WalletConnect Setup'
-                    : connector.name
-
-              return (
-                <button
-                  className="primary-button compact"
-                  disabled={disabled}
-                  key={connector.uid}
-                  onClick={() => connect({ connector })}
-                  type="button"
-                >
-                  {label}
-                </button>
-              )
-            })}
+            <button
+              className="primary-button compact"
+              disabled={!metaMaskConnector || isPending}
+              onClick={() => {
+                if (metaMaskConnector) {
+                  connect({ connector: metaMaskConnector })
+                }
+              }}
+              type="button"
+            >
+              {connectLabel}
+            </button>
           </div>
         )}
       </div>
 
       {error ? <p className="inline-error">{error.message}</p> : null}
-      {!walletConnectConfigured ? (
-        <p className="inline-error">
-          Set <code>VITE_WALLETCONNECT_PROJECT_ID</code> to enable WalletConnect QR sessions.
-        </p>
-      ) : null}
     </header>
   )
 }

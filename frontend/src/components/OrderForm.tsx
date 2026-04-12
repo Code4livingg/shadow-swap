@@ -5,6 +5,12 @@ import { EncryptAnimation } from './EncryptAnimation'
 type OrderFormProps = {
   deploymentPending: boolean
   disabled: boolean
+  onSubmitBlind: (values: {
+    amount: string
+    slippage: string
+    tokenA: string
+    tokenB: string
+  }) => Promise<string | void>
   onSubmit: (values: {
     amount: string
     isBuy: boolean
@@ -12,14 +18,23 @@ type OrderFormProps = {
     tokenA: string
     tokenB: string
   }) => Promise<string | void>
+  blindSubmitting: boolean
   submitting: boolean
 }
 
-export function OrderForm({ deploymentPending, disabled, onSubmit, submitting }: OrderFormProps) {
+export function OrderForm({
+  deploymentPending,
+  disabled,
+  onSubmitBlind,
+  onSubmit,
+  blindSubmitting,
+  submitting,
+}: OrderFormProps) {
   const [tokenA, setTokenA] = useState('ETH')
   const [tokenB, setTokenB] = useState('USDC')
   const [amount, setAmount] = useState('1')
   const [price, setPrice] = useState('1900')
+  const [slippage, setSlippage] = useState('0.5')
   const [isBuy, setIsBuy] = useState(true)
   const [orderType, setOrderType] = useState<'limit' | 'market'>('limit')
   const [animationActive, setAnimationActive] = useState(false)
@@ -54,6 +69,21 @@ export function OrderForm({ deploymentPending, disabled, onSubmit, submitting }:
     }
   }
 
+  const handleBlindSubmit = async () => {
+    setAnimationActive(true)
+    setCompletedHash(null)
+
+    try {
+      const hash = await onSubmitBlind({ amount, slippage, tokenA, tokenB })
+      if (hash) {
+        setCompletedHash(hash)
+      }
+    } catch {
+      setAnimationActive(false)
+      setCompletedHash(null)
+    }
+  }
+
   return (
     <section className="glass-panel panel-stack order-form-panel">
       <EncryptAnimation active={animationActive} completedHash={completedHash} label="FHE Order Sealing" />
@@ -64,14 +94,14 @@ export function OrderForm({ deploymentPending, disabled, onSubmit, submitting }:
           <h2>Seal a new order</h2>
         </div>
         <div className="badge-row">
-          <span className="badge badge-accent">Encrypted</span>
+          <span className="badge badge-accent">Private Intent Mode Active</span>
           <span className="badge badge-gold">Threshold-ready</span>
         </div>
       </div>
 
       <div className="encryption-strip">
         <Lock size={16} />
-        <span>E2E Encrypted</span>
+        <span>Intent encrypted locally</span>
       </div>
 
       <form className="form-grid" onSubmit={(event) => void handleSubmit(event)}>
@@ -112,26 +142,37 @@ export function OrderForm({ deploymentPending, disabled, onSubmit, submitting }:
           <input min="1" onChange={(event) => setPrice(event.target.value)} type="number" value={price} />
         </label>
 
+        <label>
+          Slippage %
+          <input
+            min="0"
+            onChange={(event) => setSlippage(event.target.value)}
+            step="0.1"
+            type="number"
+            value={slippage}
+          />
+        </label>
+
         <div className="toggle-row" role="radiogroup" aria-label="Order side">
           <button
             className={isBuy ? 'segmented-button active' : 'segmented-button'}
             onClick={() => setIsBuy(true)}
             type="button"
           >
-            Buy Token A
+            BLIND BUY
           </button>
           <button
             className={!isBuy ? 'segmented-button active sell' : 'segmented-button'}
             onClick={() => setIsBuy(false)}
             type="button"
           >
-            Sell Token A
+            BLIND SELL
           </button>
         </div>
 
         <div className="submission-meta">
           <span>Pair routing: {tokenA}/{tokenB}</span>
-          <span>{deploymentPending ? 'Awaiting contract deployment' : 'Arbitrum Sepolia ready'}</span>
+          <span>{deploymentPending ? 'Contract unavailable' : 'Arbitrum Sepolia ready'}</span>
         </div>
 
         {amount ? (
@@ -142,14 +183,30 @@ export function OrderForm({ deploymentPending, disabled, onSubmit, submitting }:
           {submitting ? (
             <span className="button-inline">
               <Lock className="spin" size={16} />
-              Sealing order...
+              SUBMITTING BLIND INTENT...
             </span>
           ) : (
-            'Seal & Submit Order'
+            'SUBMIT BLIND INTENT'
           )}
         </button>
 
-        <p className="micro-copy">Powered by Fhenix CoFHE</p>
+        <button
+          className="secondary-button wide"
+          disabled={disabled || blindSubmitting}
+          onClick={() => void handleBlindSubmit()}
+          type="button"
+        >
+          {blindSubmitting ? (
+            <span className="button-inline">
+              <Lock className="spin" size={16} />
+              SUBMITTING BLIND INTENT...
+            </span>
+          ) : (
+            'SUBMIT BLIND INTENT'
+          )}
+        </button>
+
+        <p className="micro-copy">Order encrypted before broadcast</p>
       </form>
     </section>
   )

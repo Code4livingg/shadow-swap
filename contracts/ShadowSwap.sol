@@ -11,7 +11,19 @@ contract ShadowSwap {
         bool isBuy;
     }
 
+    struct BlindIntent {
+        address user;
+        bytes encryptedPayload;
+        uint256 timestamp;
+    }
+
     Order[] private orders;
+    BlindIntent[] public intents;
+
+    event BlindIntentSubmitted(
+        address indexed user,
+        uint256 intentId
+    );
 
     euint32 private ZERO;
     ebool private TRUE_VALUE;
@@ -66,6 +78,21 @@ contract ShadowSwap {
                 amount: encryptedAmount,
                 isBuy: isBuy
             })
+        );
+    }
+
+    function submitIntent(bytes calldata encryptedIntent) external {
+        intents.push(
+            BlindIntent({
+                user: msg.sender,
+                encryptedPayload: encryptedIntent,
+                timestamp: block.timestamp
+            })
+        );
+
+        emit BlindIntentSubmitted(
+            msg.sender,
+            intents.length - 1
         );
     }
 
@@ -193,5 +220,9 @@ contract ShadowSwap {
 
     function getOrderCount() external view returns (uint256) {
         return orders.length;
+    }
+
+    function getIntentCount() external view returns (uint256) {
+        return intents.length;
     }
 }

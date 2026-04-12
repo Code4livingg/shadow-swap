@@ -1,6 +1,5 @@
-import { BrowserProvider, Contract, JsonRpcProvider, ZeroAddress, isAddress } from 'ethers'
+import { BrowserProvider, Contract, JsonRpcProvider, isAddress } from 'ethers'
 
-export const CONTRACT_ADDRESS = '0x0000000000000000000000000000000000000000'
 export const ARBITRUM_SEPOLIA_RPC_URL =
   import.meta.env.VITE_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc'
 
@@ -40,6 +39,7 @@ export type SubmitEncryptedOrderParams = {
 
 const SHADOW_SWAP_ABI = [
   'function submitOrder((uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) price,(uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) amount,bool isBuy)',
+  'function submitIntent(bytes encryptedIntent)',
   'function matchOrders()',
   'function revealWinner()',
   'function getOrderCount() view returns (uint256)',
@@ -60,35 +60,22 @@ const SHADOW_SWAP_ABI = [
   'function revealedWinnerIsBuy() view returns (bool)',
 ] as const
 
-const EMPTY_SNAPSHOT: ShadowSwapSnapshot = {
-  deploymentPending: true,
-  hasBuyOrdersHandle: '0',
-  hasSellOrdersHandle: '0',
-  highestBuyAmountHandle: '0',
-  highestBuyPriceHandle: '0',
-  highestSellAmountHandle: '0',
-  highestSellPriceHandle: '0',
-  orderCount: 0,
-  revealedWinnerAmount: '0',
-  revealedWinnerIsBuy: false,
-  revealedWinnerPrice: '0',
-  revealedWinnerTrader: ZeroAddress,
-  winnerAmountHandle: '0',
-  winnerDecryptRequested: false,
-  winnerIsBuyHandle: '0',
-  winnerPriceHandle: '0',
-  winnerRevealed: false,
-}
-
 const getConfiguredAddress = () => {
   const envAddress = import.meta.env.VITE_CONTRACT_ADDRESS?.trim()
-  if (!envAddress) return CONTRACT_ADDRESS
-  return isAddress(envAddress) ? envAddress : CONTRACT_ADDRESS
+  if (!envAddress) {
+    throw new Error('VITE_CONTRACT_ADDRESS is not set')
+  }
+
+  if (!isAddress(envAddress)) {
+    throw new Error(`Invalid VITE_CONTRACT_ADDRESS: ${envAddress}`)
+  }
+
+  return envAddress
 }
 
 export const getShadowSwapAddress = () => getConfiguredAddress()
 
-export const isDeploymentPending = () => getConfiguredAddress() === CONTRACT_ADDRESS
+export const isDeploymentPending = () => false
 
 const getReadContract = () =>
   new Contract(getConfiguredAddress(), SHADOW_SWAP_ABI, new JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL))
@@ -113,21 +100,20 @@ export async function submitEncryptedOrder({
   encryptedPrice,
   isBuy,
 }: SubmitEncryptedOrderParams) {
-  if (isDeploymentPending()) {
-    throw new Error('Deployment pending. Set VITE_CONTRACT_ADDRESS after ShadowSwap is deployed.')
-  }
-
   const { contract } = await getWriteContract()
   const tx = await contract.submitOrder(encryptedPrice, encryptedAmount, isBuy)
   await tx.wait()
   return tx.hash as string
 }
 
-export async function matchOrders() {
-  if (isDeploymentPending()) {
-    throw new Error('Deployment pending. Matching is unavailable until the contract is live.')
-  }
+export async function submitBlindIntentPayload(encryptedIntent: string) {
+  const { contract } = await getWriteContract()
+  const tx = await contract.submitIntent(encryptedIntent)
+  await tx.wait()
+  return tx.hash as string
+}
 
+export async function matchOrders() {
   const { contract } = await getWriteContract()
   const tx = await contract.matchOrders()
   await tx.wait()
@@ -135,10 +121,6 @@ export async function matchOrders() {
 }
 
 export async function revealWinner() {
-  if (isDeploymentPending()) {
-    throw new Error('Deployment pending. Winner reveal is unavailable until the contract is live.')
-  }
-
   const { contract } = await getWriteContract()
   const tx = await contract.revealWinner()
   await tx.wait()
@@ -146,10 +128,6 @@ export async function revealWinner() {
 }
 
 export async function readShadowSwapSnapshot(): Promise<ShadowSwapSnapshot> {
-  if (isDeploymentPending()) {
-    return EMPTY_SNAPSHOT
-  }
-
   const contract = getReadContract()
 
   const [

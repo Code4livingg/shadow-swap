@@ -1,7 +1,10 @@
-import { BrowserProvider, Contract, Interface, JsonRpcProvider, isAddress } from 'ethers'
+import { ethers } from 'ethers'
+import shadowSwapArtifact from '../../../artifacts/contracts/ShadowSwap.sol/ShadowSwap.json'
 
 export const ARBITRUM_SEPOLIA_RPC_URL =
   import.meta.env.VITE_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc'
+export const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS?.trim() || ''
+export const SHADOW_SWAP_ABI = shadowSwapArtifact.abi
 
 export type ShadowSwapSnapshot = {
   deploymentPending: boolean
@@ -44,38 +47,13 @@ export type IntentMatch = {
   timestamp: string
 }
 
-const SHADOW_SWAP_ABI = [
-  'function submitOrder((uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) price,(uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) amount,bool isBuy)',
-  'function submitIntent(bytes encryptedIntent)',
-  'function matches(uint256) view returns (uint256 intentA, uint256 intentB, uint256 timestamp)',
-  'function matchOrders()',
-  'function revealWinner()',
-  'function getOrderCount() view returns (uint256)',
-  'function hasBuyOrders() view returns (uint256)',
-  'function hasSellOrders() view returns (uint256)',
-  'function highestBuyPrice() view returns (uint256)',
-  'function highestBuyAmount() view returns (uint256)',
-  'function highestSellPrice() view returns (uint256)',
-  'function highestSellAmount() view returns (uint256)',
-  'function winnerPrice() view returns (uint256)',
-  'function winnerAmount() view returns (uint256)',
-  'function winnerIsBuy() view returns (uint256)',
-  'function winnerDecryptRequested() view returns (bool)',
-  'function winnerRevealed() view returns (bool)',
-  'function revealedWinnerTrader() view returns (address)',
-  'function revealedWinnerPrice() view returns (uint256)',
-  'function revealedWinnerAmount() view returns (uint256)',
-  'function revealedWinnerIsBuy() view returns (bool)',
-  'event IntentMatched(uint256 indexed intentA, uint256 indexed intentB)',
-] as const
-
 const getConfiguredAddress = () => {
-  const envAddress = import.meta.env.VITE_CONTRACT_ADDRESS?.trim()
+  const envAddress = CONTRACT_ADDRESS
   if (!envAddress) {
     throw new Error('VITE_CONTRACT_ADDRESS is not set')
   }
 
-  if (!isAddress(envAddress)) {
+  if (!ethers.isAddress(envAddress)) {
     throw new Error(`Invalid VITE_CONTRACT_ADDRESS: ${envAddress}`)
   }
 
@@ -87,20 +65,26 @@ export const getShadowSwapAddress = () => getConfiguredAddress()
 export const isDeploymentPending = () => false
 
 const getReadContract = () =>
-  new Contract(getConfiguredAddress(), SHADOW_SWAP_ABI, new JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL))
+  new ethers.Contract(getConfiguredAddress(), SHADOW_SWAP_ABI, new ethers.JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL))
 
-const getReadProvider = () => new JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL)
+const getReadProvider = () => new ethers.JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL)
 
 const getWriteContract = async () => {
   if (!window.ethereum) {
     throw new Error('No wallet provider found.')
   }
 
-  const provider = new BrowserProvider(window.ethereum)
+  const provider = new ethers.BrowserProvider(window.ethereum)
+  await provider.send('eth_requestAccounts', [])
   const signer = await provider.getSigner()
+  const network = await provider.getNetwork()
+
+  if (network.chainId !== 421614n) {
+    throw new Error('Wrong network. Switch MetaMask to Arbitrum Sepolia (421614).')
+  }
 
   return {
-    contract: new Contract(getConfiguredAddress(), SHADOW_SWAP_ABI, signer),
+    contract: new ethers.Contract(getConfiguredAddress(), SHADOW_SWAP_ABI, signer),
     provider,
     signer,
   }
@@ -235,7 +219,7 @@ export async function readMatches(): Promise<IntentMatch[]> {
   const provider = getReadProvider()
   const contract = getReadContract()
   const contractAddress = getConfiguredAddress()
-  const contractInterface = new Interface(SHADOW_SWAP_ABI)
+  const contractInterface = new ethers.Interface(SHADOW_SWAP_ABI)
   const eventFragment = contractInterface.getEvent('IntentMatched')
 
   if (!eventFragment) {

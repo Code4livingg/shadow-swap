@@ -1,7 +1,12 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { ethers } from 'ethers'
 import { arbitrumSepolia } from 'wagmi/chains'
 import { encryptIntent, type BlindIntent } from '../utils/encryptIntent'
-import { submitBlindIntentPayload } from '../contracts/ShadowSwap'
+import {
+  ARBITRUM_SEPOLIA_RPC_URL,
+  CONTRACT_ADDRESS,
+  SHADOW_SWAP_ABI,
+} from '../contracts/ShadowSwap'
 
 const ARBITRUM_SEPOLIA_HEX = `0x${arbitrumSepolia.id.toString(16)}`
 
@@ -38,20 +43,77 @@ async function ensureArbitrumSepolia() {
 export function useBlindIntent() {
   const [submittingBlindIntent, setSubmittingBlindIntent] = useState(false)
 
+  useEffect(() => {
+    if (!CONTRACT_ADDRESS) {
+      return
+    }
+
+    const provider = new ethers.JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL)
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, SHADOW_SWAP_ABI, provider)
+
+    const handleIntentSubmitted = (user: string, intentId: bigint) => {
+      console.log('IntentSubmitted', {
+        intentId: intentId.toString(),
+        user,
+      })
+    }
+
+    const handleMatchCreated = (intentA: bigint, intentB: bigint) => {
+      console.log('MatchCreated', {
+        intentA: intentA.toString(),
+        intentB: intentB.toString(),
+      })
+    }
+
+    contract.on('BlindIntentSubmitted', handleIntentSubmitted)
+    contract.on('IntentMatched', handleMatchCreated)
+
+    return () => {
+      contract.off('BlindIntentSubmitted', handleIntentSubmitted)
+      contract.off('IntentMatched', handleMatchCreated)
+    }
+  }, [])
+
   const submitBlindIntent = useCallback(async (intent: BlindIntent) => {
     setSubmittingBlindIntent(true)
 
     try {
       await ensureArbitrumSepolia()
 
-      const encryptedIntent = encryptIntent(intent)
-      console.log('Encrypted payload', encryptedIntent)
+      if (!window.ethereum) {
+        throw new Error('No wallet provider found.')
+      }
 
-      const txHash = await submitBlindIntentPayload(encryptedIntent)
-      console.log('Blind intent submitted')
-      console.log('Blind intent tx hash', txHash)
+      if (!CONTRACT_ADDRESS) {
+        throw new Error('VITE_CONTRACT_ADDRESS is not set')
+      }
 
-      return txHash
+      const encryptedPayload = encryptIntent(intent)
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      await provider.send('eth_requestAccounts', [])
+      const signer = await provider.getSigner()
+      const network = await provider.getNetwork()
+
+      if (network.chainId !== 421614n) {
+        throw new Error('Wrong network. Switch MetaMask to Arbitrum Sepolia (421614).')
+      }
+
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, SHADOW_SWAP_ABI, signer)
+
+      console.log('Wallet connected:', signer.address)
+      console.log('Contract:', CONTRACT_ADDRESS)
+      console.log('Submitting payload:', encryptedPayload)
+      console.log('Submitting intent...')
+
+      const tx = await contract.submitIntent(encryptedPayload)
+      await tx.wait()
+
+      console.log('Intent submitted:', tx.hash)
+
+      return tx.hash as string
+    } catch (err) {
+      console.error('Submit failed:', err)
+      throw err
     } finally {
       setSubmittingBlindIntent(false)
     }

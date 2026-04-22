@@ -14,12 +14,21 @@ contract ShadowSwap {
     struct BlindIntent {
         address user;
         bytes encryptedPayload;
+        bool isBuy;
+        uint256 amount;
+        uint256 minPrice;
+        uint256 maxPrice;
         uint256 timestamp;
+        bool matched;
+        bool open;
+        bool isRangeIntent;
     }
 
     struct Match {
         uint256 intentA;
         uint256 intentB;
+        uint256 settlementPrice;
+        uint256 settlementAmount;
         uint256 timestamp;
     }
 
@@ -30,6 +39,25 @@ contract ShadowSwap {
     event BlindIntentSubmitted(
         address indexed user,
         uint256 intentId
+    );
+
+    event RangeIntentSubmitted(
+        address indexed user,
+        uint256 indexed intentId,
+        bool isBuy,
+        uint256 amount,
+        uint256 minPrice,
+        uint256 maxPrice,
+        uint256 timestamp
+    );
+
+    event PriceDiscovered(
+        uint256 indexed buyIntentId,
+        uint256 indexed sellIntentId,
+        uint256 settlementPrice,
+        uint256 overlapMin,
+        uint256 overlapMax,
+        uint256 settlementAmount
     );
 
     event IntentMatched(
@@ -98,7 +126,14 @@ contract ShadowSwap {
             BlindIntent({
                 user: msg.sender,
                 encryptedPayload: encryptedIntent,
-                timestamp: block.timestamp
+                isBuy: false,
+                amount: 0,
+                minPrice: 0,
+                maxPrice: 0,
+                timestamp: block.timestamp,
+                matched: false,
+                open: true,
+                isRangeIntent: false
             })
         );
 
@@ -108,17 +143,79 @@ contract ShadowSwap {
         );
     }
 
+    function submitRangeIntent(
+        bool isBuy,
+        uint256 amount,
+        uint256 minPrice,
+        uint256 maxPrice
+    ) external {
+        require(amount > 0, "Amount must be greater than zero");
+        require(minPrice <= maxPrice, "Invalid price range");
+
+        intents.push(
+            BlindIntent({
+                user: msg.sender,
+                encryptedPayload: "",
+                isBuy: isBuy,
+                amount: amount,
+                minPrice: minPrice,
+                maxPrice: maxPrice,
+                timestamp: block.timestamp,
+                matched: false,
+                open: true,
+                isRangeIntent: true
+            })
+        );
+
+        uint256 intentId = intents.length - 1;
+
+        emit RangeIntentSubmitted(
+            msg.sender,
+            intentId,
+            isBuy,
+            amount,
+            minPrice,
+            maxPrice,
+            block.timestamp
+        );
+    }
+
     function matchIntents(
         uint256 intentA,
         uint256 intentB
     ) external {
+        _matchIntentPair(intentA, intentB);
+    }
+
+    function autoMatch(
+        uint256 intentA,
+        uint256 intentB
+    ) external {
+        _matchIntentPair(intentA, intentB);
+    }
+
+    function _matchIntentPair(
+        uint256 intentA,
+        uint256 intentB
+    ) internal {
         require(intentA < intents.length);
         require(intentB < intents.length);
+        require(intentA != intentB, "Cannot self-match intent");
+
+        BlindIntent storage firstIntent = intents[intentA];
+        BlindIntent storage secondIntent = intents[intentB];
+
+        if (firstIntent.isRangeIntent && secondIntent.isRangeIntent) {
+            _matchRangeIntents(intentA, intentB, firstIntent, secondIntent);
+            return;
+        }
 
         matches.push(
             Match({
                 intentA: intentA,
                 intentB: intentB,
+                settlementPrice: 0,
+                settlementAmount: 0,
                 timestamp: block.timestamp
             })
         );
@@ -126,22 +223,68 @@ contract ShadowSwap {
         emit IntentMatched(intentA, intentB);
     }
 
-    function autoMatch(
+    function _matchRangeIntents(
         uint256 intentA,
-        uint256 intentB
-    ) external {
-        require(intentA < intents.length);
-        require(intentB < intents.length);
+        uint256 intentB,
+        BlindIntent storage firstIntent,
+        BlindIntent storage secondIntent
+    ) internal {
+        uint256 buyId;
+        uint256 sellId;
+        BlindIntent storage buyIntent = intents[0];
+        BlindIntent storage sellIntent = intents[0];
+
+        require(firstIntent.open && !firstIntent.matched, "First intent is not open");
+        require(secondIntent.open && !secondIntent.matched, "Second intent is not open");
+        require(firstIntent.user != secondIntent.user, "Cannot match same user");
+        require(firstIntent.isBuy != secondIntent.isBuy, "Intent sides must differ");
+
+        if (firstIntent.isBuy) {
+            buyId = intentA;
+            sellId = intentB;
+            buyIntent = firstIntent;
+            sellIntent = secondIntent;
+        } else {
+            buyId = intentB;
+            sellId = intentA;
+            buyIntent = secondIntent;
+            sellIntent = firstIntent;
+        }
+
+        require(buyIntent.maxPrice >= sellIntent.minPrice, "No executable overlap");
+
+        uint256 overlapMin = buyIntent.minPrice > sellIntent.minPrice ? buyIntent.minPrice : sellIntent.minPrice;
+        uint256 overlapMax = buyIntent.maxPrice < sellIntent.maxPrice ? buyIntent.maxPrice : sellIntent.maxPrice;
+
+        require(overlapMin <= overlapMax, "No price intersection");
+
+        uint256 settlementPrice = overlapMin + ((overlapMax - overlapMin) / 2);
+        uint256 settlementAmount = buyIntent.amount < sellIntent.amount ? buyIntent.amount : sellIntent.amount;
+
+        buyIntent.matched = true;
+        buyIntent.open = false;
+        sellIntent.matched = true;
+        sellIntent.open = false;
 
         matches.push(
             Match({
-                intentA: intentA,
-                intentB: intentB,
+                intentA: buyId,
+                intentB: sellId,
+                settlementPrice: settlementPrice,
+                settlementAmount: settlementAmount,
                 timestamp: block.timestamp
             })
         );
 
-        emit IntentMatched(intentA, intentB);
+        emit PriceDiscovered(
+            buyId,
+            sellId,
+            settlementPrice,
+            overlapMin,
+            overlapMax,
+            settlementAmount
+        );
+        emit IntentMatched(buyId, sellId);
     }
 
     function matchOrders() external {

@@ -2,7 +2,6 @@ import { task } from 'hardhat/config'
 import { HardhatRuntimeEnvironment } from 'hardhat/types'
 import { Counter } from '../typechain-types'
 import { cofhejs, FheTypes } from 'cofhejs/node'
-import { cofhejs_initializeWithHardhatSigner } from 'cofhe-hardhat-plugin'
 import { getDeployment } from './utils'
 
 // Task to increment the counter
@@ -22,7 +21,7 @@ task('increment-counter', 'Increment the counter on the deployed contract').setA
 	// Get the signer
 	const [signer] = await ethers.getSigners()
 	console.log(`Using account: ${signer.address}`)
-	await cofhejs_initializeWithHardhatSigner(signer)
+	await hre.cofhe.initializeWithHardhatSigner(signer)
 
 	// Get the contract instance with proper typing
 	const Counter = await ethers.getContractFactory('Counter')

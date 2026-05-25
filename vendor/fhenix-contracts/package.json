@@ -1,0 +1,7 @@
+{
+  "name": "@fhenixprotocol/contracts",
+  "version": "0.0.0-local-compat",
+  "files": [
+    "TFHE.sol"
+  ]
+}

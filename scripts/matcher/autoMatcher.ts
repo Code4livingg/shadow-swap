@@ -1,8 +1,9 @@
+import { readFileSync } from 'fs'
+import path from 'path'
 import { ethers, network } from 'hardhat'
 import { ShadowSwap__factory } from '../../typechain-types'
 
 const POLL_INTERVAL_MS = 5_000
-const DEFAULT_CONTRACT_ADDRESS = '0xE60309Cd41d29C4c320bFbDef6f1f55244D37d41'
 
 type IntentRecord = {
   amount: bigint
@@ -20,11 +21,33 @@ type IntentRecord = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const getContractAddress = () =>
-  process.env.SHADOW_SWAP_ADDRESS ||
-  process.env.CONTRACT_ADDRESS ||
-  process.env.VITE_CONTRACT_ADDRESS ||
-  DEFAULT_CONTRACT_ADDRESS
+const getContractAddress = () => {
+  const fromEnv = process.env.SHADOW_SWAP_ADDRESS || process.env.CONTRACT_ADDRESS || process.env.VITE_CONTRACT_ADDRESS
+  if (fromEnv) {
+    return fromEnv
+  }
+
+  const deploymentPath = path.join(process.cwd(), 'deployments', 'legacy-shadow-swap.json')
+  const deploymentExists = (() => {
+    try {
+      readFileSync(deploymentPath, 'utf8')
+      return true
+    } catch {
+      return false
+    }
+  })()
+
+  if (!deploymentExists) {
+    throw new Error('No ShadowSwap legacy contract address configured. Set SHADOW_SWAP_ADDRESS or create deployments/legacy-shadow-swap.json.')
+  }
+
+  const deployment = JSON.parse(readFileSync(deploymentPath, 'utf8')) as { address?: string }
+  if (!deployment.address) {
+    throw new Error('deployments/legacy-shadow-swap.json is missing an address field.')
+  }
+
+  return deployment.address
+}
 
 function normalizePair(intentA: bigint, intentB: bigint) {
   return intentA < intentB ? `${intentA}-${intentB}` : `${intentB}-${intentA}`

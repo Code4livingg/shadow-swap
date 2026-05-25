@@ -5,10 +5,11 @@ import '@nomicfoundation/hardhat-verify'
 import 'cofhe-hardhat-plugin'
 import * as dotenv from 'dotenv'
 import './tasks'
+import './tasks/smoke-test'
 
 dotenv.config()
 const PRIVATE_KEY = process.env.PRIVATE_KEY || ''
-const RPC_URL = process.env.ARBITRUM_SEPOLIA_RPC_URL || ''
+const RPC_URL = process.env.ARBITRUM_SEPOLIA_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc'
 
 const config: HardhatUserConfig = {
 	solidity: {
@@ -18,7 +19,6 @@ const config: HardhatUserConfig = {
 		},
 	},
 	defaultNetwork: 'hardhat',
-	// defaultNetwork: 'localcofhe',
 	networks: {
 		// The plugin already provides localcofhe configuration
 
@@ -40,7 +40,7 @@ const config: HardhatUserConfig = {
 
 		// Arbitrum Sepolia testnet configuration
 		'arb-sepolia': {
-			url: RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc',
+			url: RPC_URL,
 			accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
 			chainId: 421614,
 			gasMultiplier: 1.2,

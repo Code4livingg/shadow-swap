@@ -1,10 +1,10 @@
 import { ethers } from 'ethers'
-import shadowSwapArtifact from '../../../artifacts/contracts/ShadowSwap.sol/ShadowSwap.json'
+import { ShadowIntentABI } from '../abis'
 
 export const ARBITRUM_SEPOLIA_RPC_URL =
   import.meta.env.VITE_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc'
 export const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS?.trim() || ''
-export const SHADOW_SWAP_ABI = shadowSwapArtifact.abi
+export const SHADOW_SWAP_ABI = ShadowIntentABI
 
 export type ShadowSwapSnapshot = {
   deploymentPending: boolean

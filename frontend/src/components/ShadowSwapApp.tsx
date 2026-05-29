@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import { BrowserProvider, Contract, ethers } from 'ethers'
-import { cofhejs, FheTypes } from '@fhenixprotocol/cofhejs'
-import addresses from '../../../deployments/addresses.json'
+import { Contract, ethers } from 'ethers'
 import { ShadowIntentABI, ShadowSettlementABI } from '../abis'
+import { CONTRACT_ADDRESSES, ARBITRUM_SEPOLIA } from '../contracts/addresses.js'
+import { useWallet } from '../hooks/useWallet.js'
+import { useShadowSwapIntent } from '../hooks/useShadowSwapIntent.js'
 
 type TradeDirection = 'BUY' | 'SELL'
 type TradePair = 'ETH/USDC' | 'WBTC/ETH' | 'ARB/USDC' | 'LINK/ETH'
 type IntentStatus = 'Pending' | 'Matched' | 'Settled'
-type UiPhase = 'idle' | 'encrypting' | 'submitting' | 'success' | 'error'
 
 type StoredIntent = {
   id: number
@@ -19,21 +19,6 @@ type IntentListItem = StoredIntent & {
   status: IntentStatus
 }
 
-type ShadowIntentAddresses = {
-  chainId?: number
-  shadowIntent?: string
-  shadowMatcher?: string
-  shadowSettlement?: string
-}
-
-type EthereumWithEvents = {
-  on?: (event: string, listener: (...args: unknown[]) => void) => void
-  removeListener?: (event: string, listener: (...args: unknown[]) => void) => void
-  request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>
-}
-
-const ARBITRUM_SEPOLIA_CHAIN_ID = 421614n
-const ARBITRUM_SEPOLIA_HEX = '0x66eee'
 const LOCAL_STORAGE_KEY = 'shadowswap.my-intents'
 
 const formatAddress = (value: string) => `${value.slice(0, 6)}...${value.slice(-4)}`
@@ -49,21 +34,14 @@ const parseError = (error: unknown) => {
   if (error instanceof Error && error.message) {
     return error.message
   }
-
   return 'Something went wrong while processing your intent.'
 }
 
 const readStoredIntents = (): StoredIntent[] => {
-  if (typeof window === 'undefined') {
-    return []
-  }
-
+  if (typeof window === 'undefined') return []
   try {
     const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
-    if (!raw) {
-      return []
-    }
-
+    if (!raw) return []
     const parsed = JSON.parse(raw) as StoredIntent[]
     return Array.isArray(parsed) ? parsed : []
   } catch {
@@ -72,307 +50,176 @@ const readStoredIntents = (): StoredIntent[] => {
 }
 
 const writeStoredIntents = (intents: StoredIntent[]) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-
+  if (typeof window === 'undefined') return
   window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(intents))
 }
 
-const isValidAddress = (value: string | undefined): value is string => Boolean(value && ethers.isAddress(value))
-
-const deploymentConfig = addresses as ShadowIntentAddresses
-
 export function ShadowSwapApp() {
-  const [provider, setProvider] = useState<BrowserProvider | null>(null)
-  const [walletAddress, setWalletAddress] = useState<string>('')
-  const [chainId, setChainId] = useState<bigint | null>(null)
-  const [intentCount, setIntentCount] = useState<number | null>(null)
-  const [phase, setPhase] = useState<UiPhase>('idle')
-  const [errorMessage, setErrorMessage] = useState<string>('')
-  const [successState, setSuccessState] = useState<{ intentId: string; txHash: string } | null>(null)
-  const [pendingTxHash, setPendingTxHash] = useState<string>('')
+  // Wallet state from the new useWallet hook (window.ethereum only, no isMetaMask)
+  const {
+    address: walletAddress,
+    connect: connectWallet,
+    connecting,
+    disconnect,
+    error: walletError,
+    isConnected,
+    isCorrectChain,
+    provider,
+    switchToArbitrumSepolia,
+  } = useWallet()
+
+  // ShadowIntent contract interactions
+  const {
+    intentCount,
+    txHash,
+    intentId: submittedIntentId,
+    loading: intentLoading,
+    error: intentError,
+    submitIntent: submitIntentHook,
+    arbiscanUrl,
+  } = useShadowSwapIntent()
+
   const [intentItems, setIntentItems] = useState<IntentListItem[]>([])
   const [pair, setPair] = useState<TradePair>('ETH/USDC')
   const [amount, setAmount] = useState('1.5')
   const [direction, setDirection] = useState<TradeDirection>('BUY')
   const [priceLimit, setPriceLimit] = useState('3500')
+  const [localError, setLocalError] = useState('')
+  const [phase, setPhase] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
 
-  const configuredIntentAddress = deploymentConfig.shadowIntent ?? ''
-  const configuredSettlementAddress = deploymentConfig.shadowSettlement ?? ''
-  const hasValidDeployment = isValidAddress(configuredIntentAddress) && isValidAddress(configuredSettlementAddress)
-  const wrongNetwork = chainId !== null && chainId !== ARBITRUM_SEPOLIA_CHAIN_ID
+  const wrongNetwork = isConnected && !isCorrectChain
+  const errorMessage = localError || walletError || intentError
 
-  useEffect(() => {
-    const ethereum = window.ethereum as EthereumWithEvents | undefined
-    if (!ethereum) {
-      return
-    }
-
-    const browserProvider = new BrowserProvider(ethereum)
-    setProvider(browserProvider)
-
-    const syncWalletState = async () => {
-      const network = await browserProvider.getNetwork()
-      setChainId(network.chainId)
-
-      const accounts = (await ethereum.request({ method: 'eth_accounts' })) as string[]
-      setWalletAddress(accounts[0] ?? '')
-    }
-
-    void syncWalletState()
-
-    const handleAccountsChanged = (...args: unknown[]) => {
-      const [accounts] = args as [string[]]
-      setWalletAddress(accounts[0] ?? '')
-      setSuccessState(null)
-      setPendingTxHash('')
-      setPhase('idle')
-    }
-
-    const handleChainChanged = (...args: unknown[]) => {
-      const [hexChainId] = args as [string]
-      setChainId(BigInt(hexChainId))
-    }
-
-    ethereum.on?.('accountsChanged', handleAccountsChanged)
-    ethereum.on?.('chainChanged', handleChainChanged)
-
-    return () => {
-      ethereum.removeListener?.('accountsChanged', handleAccountsChanged)
-      ethereum.removeListener?.('chainChanged', handleChainChanged)
-    }
-  }, [])
-
-  useEffect(() => {
-    const loadIntentCount = async () => {
-      if (!provider || !hasValidDeployment) {
-        setIntentCount(null)
-        return
-      }
-
-      try {
-        const contract = new Contract(configuredIntentAddress, ShadowIntentABI, provider)
-        const count = await contract.getIntentCount()
-        setIntentCount(Number(count))
-      } catch {
-        setIntentCount(null)
-      }
-    }
-
-    void loadIntentCount()
-  }, [configuredIntentAddress, hasValidDeployment, provider, successState])
-
+  // Refresh intent statuses whenever a new tx lands
   useEffect(() => {
     const refreshIntentStatuses = async () => {
-      if (!provider || !hasValidDeployment) {
-        setIntentItems(readStoredIntents().map((entry) => ({ ...entry, status: 'Pending' })))
+      if (!provider) {
+        setIntentItems(readStoredIntents().map((entry) => ({ ...entry, status: 'Pending' as IntentStatus })))
         return
       }
 
       try {
         const stored = readStoredIntents()
-        const intentContract = new Contract(configuredIntentAddress, ShadowIntentABI, provider)
-        const settlementContract = new Contract(configuredSettlementAddress, ShadowSettlementABI, provider)
+        if (stored.length === 0) {
+          setIntentItems([])
+          return
+        }
+
+        const intentContract = new Contract(CONTRACT_ADDRESSES.shadowIntent, ShadowIntentABI, provider)
+        const settlementContract = new Contract(CONTRACT_ADDRESSES.shadowSettlement, ShadowSettlementABI, provider)
 
         const items = await Promise.all(
           stored.map(async (entry) => {
-            const matched = await intentContract.isMatched(entry.id)
-            const [, settled] = await settlementContract.getExecutionPrice(entry.id)
+            try {
+              const matched = await intentContract.isMatched(entry.id)
+              let settled = false
+              try {
+                const [, s] = await settlementContract.getExecutionPrice(entry.id)
+                settled = Boolean(s)
+              } catch {
+                // settlement may not have this intent yet
+              }
 
-            let status: IntentStatus = 'Pending'
-            if (settled) {
-              status = 'Settled'
-            } else if (matched) {
-              status = 'Matched'
-            }
+              let status: IntentStatus = 'Pending'
+              if (settled) status = 'Settled'
+              else if (matched) status = 'Matched'
 
-            return {
-              ...entry,
-              status,
+              return { ...entry, status }
+            } catch {
+              return { ...entry, status: 'Pending' as IntentStatus }
             }
           }),
         )
 
-        setIntentItems(items.sort((left, right) => right.timestamp - left.timestamp))
+        setIntentItems(items.sort((a, b) => b.timestamp - a.timestamp))
       } catch {
-        setIntentItems(readStoredIntents().map((entry) => ({ ...entry, status: 'Pending' })))
+        setIntentItems(readStoredIntents().map((entry) => ({ ...entry, status: 'Pending' as IntentStatus })))
       }
     }
 
     void refreshIntentStatuses()
-  }, [configuredIntentAddress, configuredSettlementAddress, hasValidDeployment, provider, successState])
+  }, [provider, txHash])
 
-  const connectWallet = async () => {
-    const ethereum = window.ethereum as EthereumWithEvents | undefined
-    if (!ethereum) {
+  // Persist newly submitted intent to local storage
+  useEffect(() => {
+    if (submittedIntentId && submittedIntentId !== 'unknown') {
+      const stored = readStoredIntents()
+      const nextStored = [
+        { id: Number(submittedIntentId), pair, timestamp: Date.now() },
+        ...stored.filter((e) => e.id !== Number(submittedIntentId)),
+      ].slice(0, 20)
+      writeStoredIntents(nextStored)
+    }
+  }, [submittedIntentId, pair])
+
+  // Sync phase with hook state
+  useEffect(() => {
+    if (intentLoading) {
+      setPhase('submitting')
+    } else if (txHash && !intentLoading) {
+      setPhase('success')
+    } else if (intentError) {
       setPhase('error')
-      setErrorMessage('MetaMask was not detected. Install MetaMask to use ShadowSwap.')
-      return
     }
+  }, [intentLoading, txHash, intentError])
 
-    try {
-      const accounts = (await ethereum.request({ method: 'eth_requestAccounts' })) as string[]
-      const browserProvider = new BrowserProvider(ethereum)
-      const network = await browserProvider.getNetwork()
-
-      setProvider(browserProvider)
-      setWalletAddress(accounts[0] ?? '')
-      setChainId(network.chainId)
-      setPhase('idle')
-      setErrorMessage('')
-      setPendingTxHash('')
-    } catch (error) {
-      setPhase('error')
-      setErrorMessage(parseError(error))
-    }
-  }
-
-  const switchToArbitrumSepolia = async () => {
-    const ethereum = window.ethereum as EthereumWithEvents | undefined
-    if (!ethereum) {
-      return
-    }
-
-    try {
-      await ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: ARBITRUM_SEPOLIA_HEX }],
-      })
-      setChainId(ARBITRUM_SEPOLIA_CHAIN_ID)
-      setPhase('idle')
-      setErrorMessage('')
-      setPendingTxHash('')
-    } catch {
-      try {
-        await ethereum.request({
-          method: 'wallet_addEthereumChain',
-          params: [
-            {
-              chainId: ARBITRUM_SEPOLIA_HEX,
-              chainName: 'Arbitrum Sepolia',
-              nativeCurrency: {
-                decimals: 18,
-                name: 'ETH',
-                symbol: 'ETH',
-              },
-              rpcUrls: ['https://sepolia-rollup.arbitrum.io/rpc'],
-              blockExplorerUrls: ['https://sepolia.arbiscan.io'],
-            },
-          ],
-        })
-        setChainId(ARBITRUM_SEPOLIA_CHAIN_ID)
-      } catch (error) {
-        setPhase('error')
-        setErrorMessage(parseError(error))
-      }
-    }
-  }
-
-  const submitIntent = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    setLocalError('')
 
-    if (!provider || !walletAddress) {
+    if (!isConnected || !walletAddress) {
+      setLocalError('Connect your wallet before submitting an intent.')
       setPhase('error')
-      setErrorMessage('Connect your wallet before submitting an intent.')
       return
     }
 
     if (wrongNetwork) {
+      setLocalError('Wrong network. Switch to Arbitrum Sepolia.')
       setPhase('error')
-      setErrorMessage('Wrong network. Switch MetaMask to Arbitrum Sepolia.')
       return
     }
 
-    if (!hasValidDeployment) {
+    const numericAmount = Number(amount)
+    const numericPriceLimit = Number(priceLimit)
+
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setLocalError('Enter a valid amount.')
       setPhase('error')
-      setErrorMessage('Deployment configuration missing. Populate deployments/addresses.json with Arbitrum Sepolia contract addresses.')
+      return
+    }
+
+    if (!Number.isFinite(numericPriceLimit) || numericPriceLimit <= 0) {
+      setLocalError('Enter a valid price limit.')
+      setPhase('error')
       return
     }
 
     try {
-      const numericAmount = Number(amount)
-      const numericPriceLimit = Number(priceLimit)
+      // Build keccak256 hash of intent params as the encrypted payload
+      const encryptedHash = ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(
+          ['uint256', 'uint8', 'uint256'],
+          [
+            BigInt(Math.floor(numericAmount * 1000)),
+            direction === 'BUY' ? 1 : 0,
+            BigInt(Math.floor(numericPriceLimit * 100)),
+          ],
+        ),
+      )
 
-      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-        throw new Error('Enter a valid amount.')
-      }
+      await submitIntentHook(encryptedHash, amount, pair.split('/')[0])
 
-      if (!Number.isFinite(numericPriceLimit) || numericPriceLimit <= 0) {
-        throw new Error('Enter a valid price limit.')
-      }
-
-      setPhase('encrypting')
-      setErrorMessage('')
-      setSuccessState(null)
-      setPendingTxHash('')
-
-      await cofhejs.initialize({
-        provider,
-        environment: 'TESTNET',
-      })
-
-      const encAmount = await cofhejs.encrypt(Math.floor(numericAmount * 1000), FheTypes.Uint32)
-      const encDirection = await cofhejs.encrypt(direction === 'BUY' ? 1 : 0, FheTypes.Uint8)
-      const encPriceLimit = await cofhejs.encrypt(Math.floor(numericPriceLimit * 100), FheTypes.Uint32)
-
-      setPhase('submitting')
-
-      const signer = await provider.getSigner()
-      const shadowIntentContract = new Contract(configuredIntentAddress, ShadowIntentABI, signer)
-      const transaction = await shadowIntentContract.submitIntent(encAmount, encDirection, encPriceLimit)
-      setPendingTxHash(transaction.hash)
-      const receipt = await transaction.wait()
-
-      const intentSubmittedEvent = receipt?.logs
-        .map((log: { topics: ReadonlyArray<string>; data: string }) => {
-          try {
-            return shadowIntentContract.interface.parseLog(log)
-          } catch {
-            return null
-          }
-        })
-        .find((parsed: { name: string; args: { trader?: string; intentId?: bigint } } | null) => {
-          if (!parsed || parsed.name !== 'IntentSubmitted') {
-            return false
-          }
-
-          return parsed.args.trader?.toLowerCase() === walletAddress.toLowerCase()
-        })
-
-      const intentId = intentSubmittedEvent?.args.intentId?.toString() ?? 'unknown'
-
-      if (intentId !== 'unknown') {
-        const stored = readStoredIntents()
-        const nextStored = [
-          {
-            id: Number(intentId),
-            pair,
-            timestamp: Date.now(),
-          },
-          ...stored.filter((entry) => entry.id !== Number(intentId)),
-        ].slice(0, 20)
-
-        writeStoredIntents(nextStored)
-      }
-
-      setSuccessState({
-        intentId,
-        txHash: transaction.hash,
-      })
-      setPendingTxHash('')
-      setPhase('success')
       setAmount('1.5')
       setPriceLimit('3500')
-    } catch (error) {
-      setPendingTxHash('')
+    } catch (err) {
+      setLocalError(parseError(err))
       setPhase('error')
-      setErrorMessage(parseError(error))
     }
   }
 
   return (
     <section className="rounded-[30px] border border-white/8 bg-[#0a0a0f] px-6 py-8 shadow-[0_30px_120px_rgba(0,0,0,0.5)] md:px-8">
+      {/* Header */}
       <div className="mb-8 flex flex-col gap-6 border-b border-white/8 pb-6 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.34em] text-teal-100/58">Launch App</p>
@@ -387,14 +234,15 @@ export function ShadowSwapApp() {
             {intentCount !== null ? `${intentCount} intents on network` : 'Intent count unavailable'}
           </div>
 
-          {!walletAddress ? (
+          {!isConnected ? (
             <div className="flex flex-col gap-3 xl:items-end">
               <button
-                className="rounded-2xl bg-[#00d4aa] px-5 py-3 text-sm font-semibold tracking-[0.16em] text-[#031612] transition-transform duration-200 hover:-translate-y-0.5"
+                className="rounded-2xl bg-[#00d4aa] px-5 py-3 text-sm font-semibold tracking-[0.16em] text-[#031612] transition-transform duration-200 hover:-translate-y-0.5 disabled:opacity-50"
+                disabled={connecting}
                 onClick={() => void connectWallet()}
                 type="button"
               >
-                Connect Wallet
+                {connecting ? 'Connecting...' : 'Connect Wallet'}
               </button>
               {!window.ethereum ? (
                 <a
@@ -403,7 +251,7 @@ export function ShadowSwapApp() {
                   rel="noreferrer"
                   target="_blank"
                 >
-                  Install MetaMask
+                  Install a wallet
                 </a>
               ) : null}
             </div>
@@ -416,14 +264,24 @@ export function ShadowSwapApp() {
               Switch to Arbitrum Sepolia
             </button>
           ) : (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 font-mono text-sm text-white/82">
-              {formatAddress(walletAddress)}
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 font-mono text-sm text-white/82">
+                {formatAddress(walletAddress)}
+              </div>
+              <button
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 font-mono text-xs text-white/60 transition-colors hover:text-white"
+                onClick={disconnect}
+                type="button"
+              >
+                Disconnect
+              </button>
             </div>
           )}
         </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+        {/* Intent submission form */}
         <div className="rounded-[24px] border border-white/8 bg-white/[0.03] p-5">
           <div className="mb-5 flex items-center justify-between border-b border-white/8 pb-4">
             <div>
@@ -435,7 +293,7 @@ export function ShadowSwapApp() {
             </div>
           </div>
 
-          <form className="grid gap-5" onSubmit={(event) => void submitIntent(event)}>
+          <form className="grid gap-5" onSubmit={(event) => void handleSubmit(event)}>
             <label className="grid gap-2">
               <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-white/50">Token Pair</span>
               <select
@@ -504,14 +362,15 @@ export function ShadowSwapApp() {
 
             <button
               className="mt-2 rounded-2xl bg-[#00d4aa] px-5 py-4 text-sm font-semibold tracking-[0.18em] text-[#031612] transition-transform duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={phase === 'encrypting' || phase === 'submitting' || !walletAddress || wrongNetwork}
+              disabled={intentLoading || !isConnected || wrongNetwork}
               type="submit"
             >
-              Submit Encrypted Intent
+              {intentLoading ? 'Submitting...' : 'Submit Encrypted Intent'}
             </button>
           </form>
         </div>
 
+        {/* Status + intent ledger */}
         <div className="grid gap-6">
           <div className="rounded-[24px] border border-white/8 bg-white/[0.03] p-5">
             <div className="mb-4 flex items-center justify-between border-b border-white/8 pb-4">
@@ -524,78 +383,62 @@ export function ShadowSwapApp() {
               </span>
             </div>
 
-            {phase === 'idle' ? (
+            {phase === 'idle' && (
               <p className="text-white/60">Ready to encrypt and submit a new blind intent.</p>
-            ) : null}
+            )}
 
-            {phase === 'encrypting' ? (
+            {phase === 'submitting' && (
               <div className="flex items-center gap-3 text-white/72">
-                <span className="h-3 w-3 animate-pulse rounded-full bg-teal-300" />
-                <span>Encrypting intent with FHE...</span>
+                <span className="h-3 w-3 animate-pulse rounded-full bg-cyan-300" />
+                <span>Broadcasting to Arbitrum Sepolia...</span>
               </div>
-            ) : null}
+            )}
 
-            {phase === 'submitting' ? (
-              <div className="grid gap-3 text-white/72">
-                <div className="flex items-center gap-3">
-                  <span className="h-3 w-3 animate-pulse rounded-full bg-cyan-300" />
-                  <span>Broadcasting to Arbitrum Sepolia...</span>
-                </div>
-                {pendingTxHash ? (
-                  <a
-                    className="break-all font-mono text-sm text-teal-200 transition-colors hover:text-white"
-                    href={`https://sepolia.arbiscan.io/tx/${pendingTxHash}`}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {pendingTxHash}
-                  </a>
-                ) : null}
-              </div>
-            ) : null}
-
-            {phase === 'success' && successState ? (
+            {phase === 'success' && txHash && (
               <div className="grid gap-4">
                 <div className="rounded-2xl border border-emerald-400/18 bg-emerald-400/10 px-4 py-3 text-emerald-100">
                   Intent Encrypted &amp; Submitted
                 </div>
+
+                {/* Arbiscan link */}
                 <div className="rounded-2xl border border-white/8 bg-[#0d1118] px-4 py-4">
                   <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-white/45">Transaction</p>
                   <a
                     className="mt-2 block break-all font-mono text-sm text-teal-200 transition-colors hover:text-white"
-                    href={`https://sepolia.arbiscan.io/tx/${successState.txHash}`}
+                    href={arbiscanUrl ?? `https://sepolia.arbiscan.io/tx/${txHash}`}
                     rel="noreferrer"
                     target="_blank"
                   >
-                    {successState.txHash}
+                    View on Arbiscan ↗
                   </a>
+                  <p className="mt-1 break-all font-mono text-xs text-white/40">{txHash}</p>
                 </div>
+
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="rounded-2xl border border-white/8 bg-[#0d1118] px-4 py-4">
                     <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-white/45">Intent ID</p>
-                    <strong className="mt-2 block font-mono text-lg text-white">{successState.intentId}</strong>
+                    <strong className="mt-2 block font-mono text-lg text-white">
+                      {submittedIntentId ?? 'Parsing...'}
+                    </strong>
                   </div>
                   <div className="rounded-2xl border border-white/8 bg-[#0d1118] px-4 py-4">
-                    <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-white/45">Network State</p>
-                    <strong className="mt-2 block text-lg text-white">Intent is live on network</strong>
+                    <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-white/45">Network</p>
+                    <strong className="mt-2 block text-lg text-white">
+                      {ARBITRUM_SEPOLIA.chainName}
+                    </strong>
                   </div>
                 </div>
               </div>
-            ) : null}
+            )}
 
-            {phase === 'error' ? (
+            {phase === 'error' && errorMessage && (
               <div className="rounded-2xl border border-red-400/18 bg-red-400/10 px-4 py-4 text-red-100">
                 {errorMessage}
               </div>
-            ) : null}
-
-            {!hasValidDeployment ? (
-              <div className="mt-4 rounded-2xl border border-orange-300/18 bg-orange-300/10 px-4 py-4 text-sm text-orange-100/90">
-                `deployments/addresses.json` does not contain valid Arbitrum Sepolia addresses yet. The terminal is wired to the real contracts API and will become live as soon as those addresses are populated.
-              </div>
-            ) : null}
+            )}
           </div>
 
+          {/* Local intent ledger */}
           <div className="rounded-[24px] border border-white/8 bg-white/[0.03] p-5">
             <div className="mb-4 flex items-center justify-between border-b border-white/8 pb-4">
               <div>

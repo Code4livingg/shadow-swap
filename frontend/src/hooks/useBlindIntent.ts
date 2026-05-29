@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { ethers } from 'ethers'
 import { arbitrumSepolia } from 'wagmi/chains'
 import { encryptIntent, type BlindIntent } from '../utils/encryptIntent'
+import { ShadowIntentABI } from '../abis'
 import {
   ARBITRUM_SEPOLIA_RPC_URL,
   CONTRACT_ADDRESS,
-  SHADOW_SWAP_ABI,
 } from '../contracts/ShadowSwap'
 
 const ARBITRUM_SEPOLIA_HEX = `0x${arbitrumSepolia.id.toString(16)}`
@@ -49,7 +49,7 @@ export function useBlindIntent() {
     }
 
     const provider = new ethers.JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL)
-    const contract = new ethers.Contract(CONTRACT_ADDRESS, SHADOW_SWAP_ABI, provider)
+    const contract = new ethers.Contract(CONTRACT_ADDRESS, ShadowIntentABI, provider)
 
     const handleIntentSubmitted = (user: string, intentId: bigint) => {
       console.log('IntentSubmitted', {
@@ -98,7 +98,7 @@ export function useBlindIntent() {
         throw new Error('Wrong network. Switch MetaMask to Arbitrum Sepolia (421614).')
       }
 
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, SHADOW_SWAP_ABI, signer)
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, ShadowIntentABI, signer)
 
       console.log('Wallet connected:', signer.address)
       console.log('Contract:', CONTRACT_ADDRESS)

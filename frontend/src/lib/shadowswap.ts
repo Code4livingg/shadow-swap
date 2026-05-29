@@ -5,29 +5,8 @@ import {
   type Eip1193Provider,
   isAddress,
 } from 'ethers'
+import { ShadowIntentABI } from '../abis'
 import { decryptBool, decryptUint32, encryptOrderInputs, initializeCofhe } from './cofhe'
-
-const SHADOW_SWAP_ABI = [
-  'function submitOrder((uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) price,(uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) amount,bool isBuy)',
-  'function matchOrders()',
-  'function revealWinner()',
-  'function getOrderCount() view returns (uint256)',
-  'function hasBuyOrders() view returns (uint256)',
-  'function hasSellOrders() view returns (uint256)',
-  'function highestBuyPrice() view returns (uint256)',
-  'function highestBuyAmount() view returns (uint256)',
-  'function highestSellPrice() view returns (uint256)',
-  'function highestSellAmount() view returns (uint256)',
-  'function winnerPrice() view returns (uint256)',
-  'function winnerAmount() view returns (uint256)',
-  'function winnerIsBuy() view returns (uint256)',
-  'function winnerDecryptRequested() view returns (bool)',
-  'function winnerRevealed() view returns (bool)',
-  'function revealedWinnerTrader() view returns (address)',
-  'function revealedWinnerPrice() view returns (uint256)',
-  'function revealedWinnerAmount() view returns (uint256)',
-  'function revealedWinnerIsBuy() view returns (bool)',
-] as const
 
 export type ShadowSwapStatus = {
   hasBuyOrdersHandle: string
@@ -83,7 +62,8 @@ const getInjectedProvider = (): Eip1193Provider => {
 
 const getBrowserProvider = () => new BrowserProvider(getInjectedProvider())
 
-const getReadContract = () => new Contract(getContractAddress(), SHADOW_SWAP_ABI, new JsonRpcProvider(getRpcUrl()))
+const getReadContract = () =>
+  new Contract(getContractAddress(), ShadowIntentABI, new JsonRpcProvider(getRpcUrl()))
 
 const getWriteContract = async () => {
   const provider = getBrowserProvider()
@@ -92,7 +72,7 @@ const getWriteContract = async () => {
   await initializeCofhe(provider, signer)
 
   return {
-    contract: new Contract(getContractAddress(), SHADOW_SWAP_ABI, signer),
+    contract: new Contract(getContractAddress(), ShadowIntentABI, signer),
   }
 }
 

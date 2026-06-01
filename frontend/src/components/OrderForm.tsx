@@ -7,6 +7,8 @@ type OrderFormProps = {
   disabled: boolean
   onSubmitBlind: (values: {
     amount: string
+    isBuy: boolean
+    price: string
     slippage: string
     tokenA: string
     tokenB: string
@@ -74,7 +76,7 @@ export function OrderForm({
     setCompletedHash(null)
 
     try {
-      const hash = await onSubmitBlind({ amount, slippage, tokenA, tokenB })
+      const hash = await onSubmitBlind({ amount, isBuy, price, slippage, tokenA, tokenB })
       if (hash) {
         setCompletedHash(hash)
       }

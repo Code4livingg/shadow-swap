@@ -80,10 +80,11 @@ export function ShadowSwapPage() {
         blindSubmitting={blindIntent.submittingBlindIntent}
         deploymentPending={shadowSwap.deploymentPending}
         disabled={!shadowSwap.isConnected || shadowSwap.networkMismatch || working || blindIntent.submittingBlindIntent}
-        onSubmitBlind={async ({ amount, slippage, tokenA, tokenB }) =>
+        onSubmitBlind={async ({ amount, isBuy, price, tokenA, tokenB }) =>
           blindIntent.submitBlindIntent({
             amount,
-            slippage: Number(slippage),
+            direction: isBuy ? 1 : 0,
+            priceLimit: price,
             timestamp: Date.now(),
             tokenIn: tokenA,
             tokenOut: tokenB,

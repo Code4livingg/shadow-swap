@@ -1,10 +1,33 @@
 import { ethers } from 'ethers'
-import shadowSwapArtifact from '../../../artifacts/contracts/ShadowSwap.sol/ShadowSwap.json'
+import addresses from '../../../deployments/addresses.json'
+import { ShadowIntentABI } from '../abis'
 
 export const ARBITRUM_SEPOLIA_RPC_URL =
   import.meta.env.VITE_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc'
 export const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS?.trim() || ''
-export const SHADOW_SWAP_ABI = shadowSwapArtifact.abi
+export const SHADOW_SWAP_ABI = [
+  'event IntentMatched(uint256 indexed intentA, uint256 indexed intentB)',
+  'function getOrderCount() view returns (uint256)',
+  'function hasBuyOrders() view returns (uint256)',
+  'function hasSellOrders() view returns (uint256)',
+  'function highestBuyPrice() view returns (uint256)',
+  'function highestBuyAmount() view returns (uint256)',
+  'function highestSellPrice() view returns (uint256)',
+  'function highestSellAmount() view returns (uint256)',
+  'function winnerPrice() view returns (uint256)',
+  'function winnerAmount() view returns (uint256)',
+  'function winnerIsBuy() view returns (uint256)',
+  'function winnerDecryptRequested() view returns (bool)',
+  'function winnerRevealed() view returns (bool)',
+  'function revealedWinnerTrader() view returns (address)',
+  'function revealedWinnerPrice() view returns (uint256)',
+  'function revealedWinnerAmount() view returns (uint256)',
+  'function revealedWinnerIsBuy() view returns (bool)',
+  'function submitOrder((uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) price,(uint256 ctHash,uint8 securityZone,uint8 utype,bytes signature) amount,bool isBuy)',
+  'function matchOrders()',
+  'function revealWinner()',
+  'function matches(uint256) view returns (uint256 intentA,uint256 intentB,uint256 settlementPrice,uint256 settlementAmount,uint256 timestamp)',
+] as const
 
 export type ShadowSwapSnapshot = {
   deploymentPending: boolean
@@ -40,11 +63,21 @@ export type SubmitEncryptedOrderParams = {
   isBuy: boolean
 }
 
+export type SubmitEncryptedIntentParams = {
+  encryptedAmount: unknown
+  encryptedDirection: unknown
+  encryptedPriceLimit: unknown
+}
+
 export type IntentMatch = {
   id: string
   intentA: string
   intentB: string
   timestamp: string
+}
+
+type ShadowIntentAddresses = {
+  shadowIntent?: string
 }
 
 const getConfiguredAddress = () => {
@@ -58,6 +91,17 @@ const getConfiguredAddress = () => {
   }
 
   return envAddress
+}
+
+const getConfiguredIntentAddress = () => {
+  const deploymentConfig = addresses as ShadowIntentAddresses
+  const intentAddress = deploymentConfig.shadowIntent ?? ''
+
+  if (!ethers.isAddress(intentAddress)) {
+    throw new Error('ShadowIntent deployment address is not configured.')
+  }
+
+  return intentAddress
 }
 
 export const getShadowSwapAddress = () => getConfiguredAddress()
@@ -101,9 +145,14 @@ export async function submitEncryptedOrder({
   return tx.hash as string
 }
 
-export async function submitBlindIntentPayload(encryptedIntent: string) {
-  const { contract } = await getWriteContract()
-  const tx = await contract.submitIntent(encryptedIntent)
+export async function submitBlindIntentPayload({
+  encryptedAmount,
+  encryptedDirection,
+  encryptedPriceLimit,
+}: SubmitEncryptedIntentParams) {
+  const { signer } = await getWriteContract()
+  const contract = new ethers.Contract(getConfiguredIntentAddress(), ShadowIntentABI, signer)
+  const tx = await contract.submitIntent(encryptedAmount, encryptedDirection, encryptedPriceLimit)
   await tx.wait()
   return tx.hash as string
 }

@@ -1,14 +1,25 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ethers } from 'ethers'
 import { arbitrumSepolia } from 'wagmi/chains'
-import { encryptIntent, type BlindIntent } from '../utils/encryptIntent'
+import addresses from '../../../deployments/addresses.json'
+import { ShadowIntentABI } from '../abis'
 import {
-  ARBITRUM_SEPOLIA_RPC_URL,
-  CONTRACT_ADDRESS,
-  SHADOW_SWAP_ABI,
-} from '../contracts/ShadowSwap'
+  assertValidIntentSignatures,
+  encryptIntentInputs,
+  getIntentSignatureLengths,
+  initializeCofhe,
+} from '../lib/cofhe'
+import { ARBITRUM_SEPOLIA_RPC_URL } from '../contracts/ShadowSwap'
+import { parseUint32Input, type BlindIntent } from '../utils/encryptIntent'
 
 const ARBITRUM_SEPOLIA_HEX = `0x${arbitrumSepolia.id.toString(16)}`
+
+type ShadowIntentAddresses = {
+  shadowIntent?: string
+}
+
+const deploymentConfig = addresses as ShadowIntentAddresses
+const SHADOW_INTENT_ADDRESS = deploymentConfig.shadowIntent ?? ''
 
 async function ensureArbitrumSepolia() {
   if (!window.ethereum) {
@@ -44,12 +55,12 @@ export function useBlindIntent() {
   const [submittingBlindIntent, setSubmittingBlindIntent] = useState(false)
 
   useEffect(() => {
-    if (!CONTRACT_ADDRESS) {
+    if (!SHADOW_INTENT_ADDRESS) {
       return
     }
 
     const provider = new ethers.JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL)
-    const contract = new ethers.Contract(CONTRACT_ADDRESS, SHADOW_SWAP_ABI, provider)
+    const contract = new ethers.Contract(SHADOW_INTENT_ADDRESS, ShadowIntentABI, provider)
 
     const handleIntentSubmitted = (user: string, intentId: bigint) => {
       console.log('IntentSubmitted', {
@@ -65,11 +76,11 @@ export function useBlindIntent() {
       })
     }
 
-    contract.on('BlindIntentSubmitted', handleIntentSubmitted)
+    contract.on('IntentSubmitted', handleIntentSubmitted)
     contract.on('IntentMatched', handleMatchCreated)
 
     return () => {
-      contract.off('BlindIntentSubmitted', handleIntentSubmitted)
+      contract.off('IntentSubmitted', handleIntentSubmitted)
       contract.off('IntentMatched', handleMatchCreated)
     }
   }, [])
@@ -84,11 +95,10 @@ export function useBlindIntent() {
         throw new Error('No wallet provider found.')
       }
 
-      if (!CONTRACT_ADDRESS) {
-        throw new Error('VITE_CONTRACT_ADDRESS is not set')
+      if (!ethers.isAddress(SHADOW_INTENT_ADDRESS)) {
+        throw new Error('ShadowIntent deployment address is not configured.')
       }
 
-      const encryptedPayload = encryptIntent(intent)
       const provider = new ethers.BrowserProvider(window.ethereum)
       await provider.send('eth_requestAccounts', [])
       const signer = await provider.getSigner()
@@ -98,14 +108,28 @@ export function useBlindIntent() {
         throw new Error('Wrong network. Switch MetaMask to Arbitrum Sepolia (421614).')
       }
 
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, SHADOW_SWAP_ABI, signer)
+      const amount = parseUint32Input(intent.amount, 'Amount')
+      const priceLimit = parseUint32Input(intent.priceLimit, 'Price limit')
+
+      await initializeCofhe(provider, signer)
+      const encryptedIntent = await encryptIntentInputs(amount, intent.direction, priceLimit)
+
+      const contract = new ethers.Contract(SHADOW_INTENT_ADDRESS, ShadowIntentABI, signer)
 
       console.log('Wallet connected:', signer.address)
-      console.log('Contract:', CONTRACT_ADDRESS)
-      console.log('Submitting payload:', encryptedPayload)
+      console.log('ShadowIntent contract:', SHADOW_INTENT_ADDRESS)
       console.log('Submitting intent...')
+      console.log('encrypted amount', encryptedIntent.amount)
+      console.log('encrypted direction', encryptedIntent.direction)
+      console.log('encrypted priceLimit', encryptedIntent.priceLimit)
+      console.log(getIntentSignatureLengths(encryptedIntent))
+      assertValidIntentSignatures(encryptedIntent)
 
-      const tx = await contract.submitIntent(encryptedPayload)
+      const tx = await contract.submitIntent(
+        encryptedIntent.amount,
+        encryptedIntent.direction,
+        encryptedIntent.priceLimit,
+      )
       await tx.wait()
 
       console.log('Intent submitted:', tx.hash)

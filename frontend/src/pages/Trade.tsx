@@ -8,6 +8,8 @@ type TradeProps = {
   disabled: boolean
   onSubmitBlind: (values: {
     amount: string
+    isBuy: boolean
+    price: string
     slippage: string
     tokenA: string
     tokenB: string

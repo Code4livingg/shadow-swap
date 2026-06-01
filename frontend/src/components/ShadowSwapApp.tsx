@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react'
 import { BrowserProvider, Contract, ethers } from 'ethers'
-import { cofhejs, FheTypes } from '@fhenixprotocol/cofhejs'
 import addresses from '../../../deployments/addresses.json'
 import { ShadowIntentABI, ShadowSettlementABI } from '../abis'
+import {
+  assertValidIntentSignatures,
+  encryptIntentInputs,
+  getIntentSignatureLengths,
+  initializeCofhe,
+} from '../lib/cofhe'
 
 type TradeDirection = 'BUY' | 'SELL'
 type TradePair = 'ETH/USDC' | 'WBTC/ETH' | 'ARB/USDC' | 'LINK/ETH'
@@ -307,20 +312,29 @@ export function ShadowSwapApp() {
       setSuccessState(null)
       setPendingTxHash('')
 
-      await cofhejs.initialize({
-        provider,
-        environment: 'TESTNET',
-      })
+      const signer = await provider.getSigner()
+      await initializeCofhe(provider, signer)
 
-      const encAmount = await cofhejs.encrypt(Math.floor(numericAmount * 1000), FheTypes.Uint32)
-      const encDirection = await cofhejs.encrypt(direction === 'BUY' ? 1 : 0, FheTypes.Uint8)
-      const encPriceLimit = await cofhejs.encrypt(Math.floor(numericPriceLimit * 100), FheTypes.Uint32)
+      const encryptedIntent = await encryptIntentInputs(
+        Math.floor(numericAmount * 1000),
+        direction === 'BUY' ? 1 : 0,
+        Math.floor(numericPriceLimit * 100),
+      )
 
       setPhase('submitting')
 
-      const signer = await provider.getSigner()
+      console.log('encrypted amount', encryptedIntent.amount)
+      console.log('encrypted direction', encryptedIntent.direction)
+      console.log('encrypted priceLimit', encryptedIntent.priceLimit)
+      console.log(getIntentSignatureLengths(encryptedIntent))
+      assertValidIntentSignatures(encryptedIntent)
+
       const shadowIntentContract = new Contract(configuredIntentAddress, ShadowIntentABI, signer)
-      const transaction = await shadowIntentContract.submitIntent(encAmount, encDirection, encPriceLimit)
+      const transaction = await shadowIntentContract.submitIntent(
+        encryptedIntent.amount,
+        encryptedIntent.direction,
+        encryptedIntent.priceLimit,
+      )
       setPendingTxHash(transaction.hash)
       const receipt = await transaction.wait()
 

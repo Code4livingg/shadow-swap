@@ -9,9 +9,6 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "baseUrl": ".",
-    "paths": {
-      "@fhenixprotocol/cofhejs": ["./src/shims/fhenix-cofhejs.ts"]
-    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",

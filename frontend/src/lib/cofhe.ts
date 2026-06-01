@@ -1,3 +1,4 @@
+import { Encryptable, cofhejs } from 'cofhejs/web'
 import { BrowserProvider, JsonRpcSigner, getBytes } from 'ethers'
 
 const FheTypes = {
@@ -57,7 +58,6 @@ export type IntentSignatureLengths = {
 }
 
 let initializedAccount: string | null = null
-let browserCofheModulePromise: Promise<BrowserCofheModule> | null = null
 
 const unwrapResult = <T>(result: Result<T>): T => {
   if (!result.success || result.data === null) {
@@ -68,12 +68,7 @@ const unwrapResult = <T>(result: Result<T>): T => {
 }
 
 async function loadBrowserCofheModule(): Promise<BrowserCofheModule> {
-  if (!browserCofheModulePromise) {
-    const importUrl = 'https://esm.sh/cofhejs@0.3.1/web?bundle'
-    browserCofheModulePromise = new Function('u', 'return import(u)')(importUrl) as Promise<BrowserCofheModule>
-  }
-
-  return browserCofheModulePromise
+  return { Encryptable, cofhejs }
 }
 
 const signatureByteLength = (signature: string | undefined): number | null => {
